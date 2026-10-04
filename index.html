@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>航班延误智能预测 · 中国版</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+    background: linear-gradient(145deg, #eef4fe 0%, #d6e4f7 100%);
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 1.2rem;
+  }
+  .card {
+    background: rgba(255,255,255,0.88); backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px); border-radius: 2.4rem;
+    padding: 1.8rem 1.8rem 2.2rem; width: 100%; max-width: 640px;
+    box-shadow: 0 25px 50px -10px rgba(0,30,60,0.28), inset 0 1px 2px rgba(255,255,255,0.9);
+    border: 1px solid rgba(255,255,255,0.7);
+  }
+  h1 {
+    display: flex; align-items: center; gap: .55rem;
+    font-size: 1.65rem; font-weight: 700; letter-spacing: -.02em;
+    color: #0b2b4b; margin-bottom: .3rem;
+  }
+  .subhead {
+    color: #2c4a6e; font-size: .88rem; display: flex; align-items: center; gap: 8px;
+    margin-bottom: 1.1rem; border-left: 4px solid #c8102e; padding-left: .9rem;
+    background: rgba(200,16,46,.06); border-radius: 0 12px 12px 0; line-height: 1.5;
+  }
+  .subhead b { color:#c8102e; }
+
+  .status-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+    background: rgba(23,69,110,0.06); border-radius: 1rem;
+    padding: .55rem .9rem; margin-bottom: 1rem;
+    font-size: .75rem; color: #2c4a6e; font-weight: 500;
+    border: 1px solid rgba(61,126,199,.12);
+  }
+  #syncStatus { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+  #syncStatus.loading { color: #b57c1c; }
+  #syncStatus.ok      { color: #1f7a4a; }
+  #syncStatus.warn    { color: #b33b2c; }
+  .btn-refresh {
+    background: white; border: 1px solid #c8d9ec; color: #1b4d7a;
+    border-radius: 30px; padding: .3rem .8rem; font-size: .73rem;
+    font-weight: 600; cursor: pointer; transition: all .2s; white-space: nowrap;
+  }
+  .btn-refresh:hover { background: #f0f6ff; border-color: #3d7ec7; }
+  .btn-refresh:disabled { opacity: .5; cursor: not-allowed; }
+  .spin { display:inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .form-grid { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem; }
+  .input-group { display: flex; flex-direction: column; gap: .35rem; }
+  .input-group label {
+    font-size: .75rem; font-weight: 700; color: #17456e;
+    text-transform: uppercase; letter-spacing: .5px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .input-group label small {
+    color: #5a7189; font-weight: 600; text-transform: none; letter-spacing: 0;
+    font-size: .68rem; margin-left: 4px;
+  }
+  .input-group select {
+    width: 100%; padding: .8rem 1.05rem; font-size: .9rem;
+    background: rgba(255,255,255,.9); border: 1.5px solid #c8d9ec;
+    border-radius: 1.3rem; outline: none; transition: all .2s;
+    color: #0b2b4b; font-weight: 600; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23c8102e' d='M6 8L2 4h8z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 1rem center;
+  }
+  .input-group select:focus {
+    border-color: #c8102e; background: #fff;
+    box-shadow: 0 0 0 4px rgba(200,16,46,.12);
+  }
+  .row-2col { display: grid; grid-template-columns: 1fr 1fr; gap: .85rem; }
+
+  .wx-strip {
+    display: grid; grid-template-columns: 1fr 1fr; gap: .65rem;
+    margin-bottom: 1.1rem;
+  }
+  .wx-box {
+    background: linear-gradient(135deg, rgba(255,255,255,.95), rgba(240,247,255,.95));
+    border: 1px solid rgba(61,126,199,.18);
+    border-radius: 1.2rem; padding: .65rem .85rem;
+    box-shadow: 0 4px 12px -6px rgba(27,77,122,.25);
+    display: flex; align-items: flex-start; gap: .6rem;
+    min-height: 82px;
+  }
+  .wx-icon { font-size: 1.8rem; line-height: 1; filter: drop-shadow(0 2px 3px rgba(0,0,0,.08)); flex-shrink: 0; }
+  .wx-meta { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+  .wx-meta .ap { font-size: .66rem; font-weight: 800; color: #c8102e; letter-spacing: .5px; }
+  .wx-meta .desc { font-size: .82rem; font-weight: 700; color: #0b2b4b; }
+  .wx-meta .extra { font-size: .63rem; color: #4a6582; line-height: 1.35; }
+  .wx-placeholder { color: #8ea3bb; font-size: .76rem; font-style: italic; }
+
+  .btn-predict {
+    width: 100%;
+    background: linear-gradient(135deg, #a00d25 0%, #c8102e 60%, #e63946 100%);
+    color: white; border: none; border-radius: 2rem;
+    padding: 1rem 1.8rem; font-size: 1.05rem; font-weight: 700;
+    letter-spacing: .3px; display: flex; align-items: center; justify-content: center;
+    gap: .6rem; cursor: pointer; transition: all .2s ease;
+    box-shadow: 0 12px 25px -8px rgba(200,16,46,.45);
+    border: 1px solid rgba(255,255,255,.2);
+  }
+  .btn-predict:hover:not(:disabled) {
+    background: linear-gradient(135deg, #8a0a1f, #b80e29);
+    transform: translateY(-2px);
+    box-shadow: 0 18px 30px -8px rgba(200,16,46,.55);
+  }
+  .btn-predict:active:not(:disabled) { transform: translateY(1px); }
+  .btn-predict:disabled { opacity: .55; cursor: wait; }
+
+  .result-card {
+    margin-top: 1.5rem;
+    background: rgba(255,255,255,.72);
+    backdrop-filter: blur(8px);
+    border-radius: 1.8rem; padding: 1.35rem 1.5rem;
+    border: 1px solid rgba(255,255,255,.9);
+    box-shadow: inset 0 2px 8px rgba(255,255,255,.8), 0 10px 20px -10px rgba(0,30,60,.2);
+    transition: all .3s ease;
+  }
+  .result-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: .6rem; color: #17456e; font-weight: 700;
+    font-size: .76rem; letter-spacing: .5px; text-transform: uppercase;
+  }
+  .risk-badge {
+    padding: .22rem .85rem; border-radius: 30px; font-size: .72rem;
+    font-weight: 800; background: #e9eef5; color: #1e3b5c;
+    transition: all .3s;
+  }
+  .prob-value {
+    font-size: 3.2rem; font-weight: 800; line-height: 1.05;
+    color: #0b2b4b; display: flex; align-items: baseline; gap: 5px;
+    letter-spacing: -.04em; transition: color .3s;
+  }
+  .prob-value small { font-size: 1.1rem; font-weight: 600; color: #4a6582; }
+  .prob-sub { font-size: .76rem; color: #5a7189; margin-top: .15rem; font-weight: 600; }
+
+  .progress-bar-bg {
+    width: 100%; height: 11px; background: #d9e2ef;
+    border-radius: 30px; overflow: hidden; margin: .85rem 0 .75rem;
+    box-shadow: inset 0 1px 4px rgba(0,0,0,.08);
+  }
+  .progress-fill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #6ec48b, #2f9e6c);
+    border-radius: 30px;
+    transition: width .7s cubic-bezier(.2,.9,.3,1), background .4s;
+    box-shadow: 0 0 10px rgba(61,126,199,.4);
+  }
+  .recommendation {
+    margin-top: .8rem; padding: .85rem 1.05rem;
+    background: rgba(200,16,46,.05); border-radius: 1.1rem;
+    border-left: 5px solid #c8102e;
+    font-weight: 500; color: #1e3b5c; font-size: .84rem;
+    display: flex; align-items: flex-start; gap: .55rem; line-height: 1.55;
+  }
+  .recommendation i { font-style: normal; font-size: 1.15rem; flex-shrink: 0; margin-top: 1px; }
+
+  .factors-section {
+    margin-top: .95rem;
+    background: rgba(23,69,110,.04);
+    border-radius: 1.1rem; padding: .8rem .95rem;
+    border: 1px dashed rgba(200,16,46,.22);
+  }
+  .factors-title {
+    font-size: .68rem; font-weight: 800; color: #17456e;
+    letter-spacing: .6px; text-transform: uppercase;
+    display: flex; align-items: center; gap: 5px;
+    margin-bottom: .5rem;
+  }
+  .factor-item {
+    display: flex; align-items: center; gap: .55rem;
+    font-size: .74rem; color: #2c4a6e; padding: .25rem 0;
+    font-weight: 600;
+  }
+  .factor-bar-bg {
+    flex: 1; height: 6px; background: rgba(61,126,199,.15);
+    border-radius: 30px; overflow: hidden;
+  }
+  .factor-bar-fill { height: 100%; border-radius: 30px; transition: width .5s ease; }
+  .factor-pct {
+    font-size: .66rem; font-weight: 800; color: #c8102e;
+    min-width: 2.2rem; text-align: right; font-variant-numeric: tabular-nums;
+  }
+  .factor-empty { font-size: .72rem; color: #6a7f99; font-style: italic; padding: .2rem 0; }
+
+  .detail-row {
+    display: flex; flex-wrap: wrap; gap: .35rem .55rem; margin-top: .8rem;
+    font-size: .66rem; color: #5a7189;
+  }
+  .detail-row span {
+    background: rgba(23,69,110,.06); padding: .18rem .55rem;
+    border-radius: 20px; font-weight: 600;
+  }
+
+  .footnote {
+    margin-top: .95rem; font-size: .65rem; color: #6a7f99;
+    text-align: center; letter-spacing: .2px; opacity: .85;
+    display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap;
+  }
+  .footnote a { color: #c8102e; text-decoration: none; font-weight: 700; }
+  .footnote a:hover { text-decoration: underline; }
+
+  @keyframes pulse { 0%,100% { opacity: .85; } 50% { opacity: 1; } }
+  .updating { animation: pulse 1s infinite; }
+
+  @media (max-width: 480px) {
+    .card { padding: 1.3rem 1.05rem 1.8rem; border-radius: 1.9rem; }
+    h1 { font-size: 1.35rem; }
+    .row-2col { grid-template-columns: 1fr; gap: .9rem; }
+    .prob-value { font-size: 2.6rem; }
+    .wx-strip { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1><span>✈️</span> 航班延误预测 · 中国版</h1>
+  <div class="subhead">
+    <span style="background:#c8102e;color:#fff;font-size:.68rem;font-weight:700;padding:.18rem .55rem;border-radius:30px;">70 个机场</span>
+    基于民航局正常率数据 · 实时气象
+  </div>
+  <div class="status-bar">
+    <span id="syncStatus" class="loading"><span class="spin">🔄</span> 正在连接气象服务器…</span>
+    <button class="btn-refresh" id="refreshBtn">🔄 刷新</button>
+  </div>
+
+  <div class="wx-strip" id="wxStrip">
+    <div class="wx-box" id="wxOrigin"><span class="wx-placeholder">出发地天气加载中…</span></div>
+    <div class="wx-box" id="wxDest"><span class="wx-placeholder">到达地天气加载中…</span></div>
+  </div>
+
+  <div class="form-grid">
+    <div class="input-group">
+      <label><span>🛫</span> 航空公司 <small id="airlineHint"></small></label>
+      <select id="airlineSelect">
+        <option value="shandong">山东航空 (SC) · 正常率 95.62%</option>
+        <option value="juneyao">吉祥航空 (HO) · 正常率 95.05%</option>
+        <option value="ceair">东方航空 (MU) · 正常率 94.96%</option>
+        <option value="spring">春秋航空 (9C) · 正常率 94.93%</option>
+        <option value="xiamen">厦门航空 (MF) · 正常率 94.87%</option>
+        <option value="tianjin">天津航空 (GS) · 正常率 94.63%</option>
+        <option value="airchina">中国国航 (CA) · 正常率 94.59%</option>
+        <option value="hainan">海南航空 (HU) · 正常率 94.38%</option>
+        <option value="chengdu">成都航空 (EU) · 正常率 94.29%</option>
+        <option value="csair">南方航空 (CZ) · 正常率 93.63%</option>
+        <option value="sichuan">四川航空 (3U) · 正常率 92.99%</option>
+        <option value="shenzhen">深圳航空 (ZH) · 正常率 87.50%</option>
+      </select>
+    </div>
+
+    <div class="row-2col">
+      <div class="input-group">
+        <label><span>🛩️</span> 出发机场</label>
+        <select id="originSelect"></select>
+      </div>
+      <div class="input-group">
+        <label><span>🛬</span> 到达机场</label>
+        <select id="destSelect"></select>
+      </div>
+    </div>
+
+    <div class="row-2col">
+      <div class="input-group">
+        <label><span>📅</span> 出发日期</label>
+        <select id="dateSelect">
+          <option value="today">今天</option>
+          <option value="tomorrow">明天</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label><span>⏰</span> 起飞时段 <small id="timeHint"></small></label>
+        <select id="timeSelect">
+          <option value="early">清晨 06:00-09:00</option>
+          <option value="morning" selected>上午 09:00-12:00</option>
+          <option value="afternoon">下午 12:00-17:00</option>
+          <option value="evening">傍晚 17:00-21:00</option>
+          <option value="night">夜间 21:00-06:00</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn-predict" id="predictBtn" disabled>
+    <span>🔮</span> 智能预测延误概率
+  </button>
+
+  <div class="result-card" id="resultCard">
+    <div class="result-header">
+      <span><span>📋</span> 预测结果</span>
+      <span class="risk-badge" id="riskBadge">等待数据</span>
+    </div>
+    <div class="prob-value" id="probValue">--<small>%</small></div>
+    <div class="prob-sub" id="probSub">延误（>15分钟）概率 · 基于中国民航统计模型</div>
+    <div class="progress-bar-bg">
+      <div class="progress-fill" id="progressFill" style="width:0%"></div>
+    </div>
+    <div class="recommendation" id="recommendation">
+      <i>💡</i> <span>正在获取实时天气数据，请稍候…</span>
+    </div>
+
+    <div class="factors-section">
+      <div class="factors-title"><span>📊</span> 延误主因分析</div>
+      <div id="factorsList"><div class="factor-empty">等待预测…</div></div>
+    </div>
+
+    <div class="detail-row" id="detailRow"></div>
+  </div>
+
+  <div class="footnote">
+    <span>📡</span> 气象数据实时来自
+    <a href=" " target="_blank" rel="noopener">Open-Meteo</a >
+    · 航司正常率基于民航局统计
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   航班延误预测 · 中国全机场版
+   70 个机场 · 分批天气请求 · 中国民航延误规律
+   ===================================================================== */
+(function () {
+  'use strict';
+
+  /* ---------- 1. 中国机场库（70 个） ---------- */
+  const AIRPORTS = {
+    // ===== 华北 =====
+    PEK: { city: '北京首都', lat: 40.0799, lon: 116.6031, base: 0.09, sens: 1.20, note: '华北枢纽' },
+    PKX: { city: '北京大兴', lat: 39.5098, lon: 116.4105, base: 0.08, sens: 1.15, note: '新枢纽' },
+    TSN: { city: '天津滨海', lat: 39.1244, lon: 117.3462, base: 0.10, sens: 1.15, note: '华北' },
+    SJW: { city: '石家庄正定', lat: 38.2807, lon: 114.6963, base: 0.11, sens: 1.20, note: '华北' },
+    TYN: { city: '太原武宿', lat: 37.7469, lon: 112.6284, base: 0.10, sens: 1.15, note: '华北' },
+    HET: { city: '呼和浩特白塔', lat: 40.8514, lon: 111.8244, base: 0.12, sens: 1.25, note: '塞北' },
+    BAV: { city: '包头东河', lat: 40.5600, lon: 109.9972, base: 0.12, sens: 1.25, note: '内蒙古' },
+    DSN: { city: '鄂尔多斯伊金霍洛', lat: 39.4936, lon: 109.8617, base: 0.12, sens: 1.25, note: '内蒙古' },
+
+    // ===== 华东 =====
+    PVG: { city: '上海浦东', lat: 31.1443, lon: 121.8083, base: 0.10, sens: 1.35, note: '国际枢纽' },
+    SHA: { city: '上海虹桥', lat: 31.1979, lon: 121.3363, base: 0.08, sens: 1.10, note: '虹桥枢纽' },
+    NKG: { city: '南京禄口', lat: 31.7420, lon: 118.8622, base: 0.10, sens: 1.15, note: '华东' },
+    HGH: { city: '杭州萧山', lat: 30.2295, lon: 120.4344, base: 0.08, sens: 1.15, note: '华东' },
+    HFE: { city: '合肥新桥', lat: 31.7800, lon: 116.9769, base: 0.10, sens: 1.15, note: '华东' },
+    TAO: { city: '青岛胶东', lat: 36.3661, lon: 120.3742, base: 0.08, sens: 1.10, note: '沿海' },
+    TNA: { city: '济南遥墙', lat: 36.8572, lon: 117.2160, base: 0.10, sens: 1.15, note: '华东' },
+    FOC: { city: '福州长乐', lat: 25.9351, lon: 119.6632, base: 0.11, sens: 1.25, note: '沿海' },
+    XMN: { city: '厦门高崎', lat: 24.5440, lon: 118.1276, base: 0.09, sens: 1.20, note: '沿海' },
+    NGB: { city: '宁波栎社', lat: 29.8267, lon: 121.4619, base: 0.09, sens: 1.15, note: '华东' },
+    WNZ: { city: '温州龙湾', lat: 27.9122, lon: 120.8522, base: 0.10, sens: 1.20, note: '沿海' },
+    JJN: { city: '泉州晋江', lat: 24.7964, lon: 118.5899, base: 0.10, sens: 1.20, note: '沿海' },
+    WUX: { city: '无锡硕放', lat: 31.4944, lon: 120.4292, base: 0.09, sens: 1.15, note: '华东' },
+    YTY: { city: '扬州泰州', lat: 32.5634, lon: 119.7192, base: 0.10, sens: 1.15, note: '华东' },
+    NTG: { city: '南通兴东', lat: 32.0708, lon: 120.9761, base: 0.10, sens: 1.15, note: '华东' },
+    YNT: { city: '烟台蓬莱', lat: 37.6572, lon: 120.9783, base: 0.10, sens: 1.15, note: '沿海' },
+    WEF: { city: '潍坊南苑', lat: 36.6467, lon: 119.1189, base: 0.10, sens: 1.15, note: '华东' },
+
+    // ===== 华南 =====
+    CAN: { city: '广州白云', lat: 23.3924, lon: 113.2988, base: 0.11, sens: 1.30, note: '华南枢纽' },
+    SZX: { city: '深圳宝安', lat: 22.6393, lon: 113.8107, base: 0.13, sens: 1.35, note: '大湾区' },
+    ZUH: { city: '珠海金湾', lat: 22.0064, lon: 113.3761, base: 0.10, sens: 1.20, note: '大湾区' },
+    HAK: { city: '海口美兰', lat: 19.9349, lon: 110.4587, base: 0.10, sens: 1.25, note: '海南' },
+    SYX: { city: '三亚凤凰', lat: 18.3029, lon: 109.4123, base: 0.09, sens: 1.20, note: '热带' },
+    NNG: { city: '南宁吴圩', lat: 22.6083, lon: 108.1722, base: 0.11, sens: 1.20, note: '华南' },
+    SWA: { city: '揭阳潮汕', lat: 23.5520, lon: 116.5034, base: 0.10, sens: 1.20, note: '粤东' },
+    ZHA: { city: '湛江吴川', lat: 21.4829, lon: 110.5917, base: 0.11, sens: 1.20, note: '粤西' },
+    MXZ: { city: '梅州梅县', lat: 24.2633, lon: 116.1049, base: 0.11, sens: 1.20, note: '粤东' },
+
+    // ===== 华中 =====
+    WUH: { city: '武汉天河', lat: 30.7838, lon: 114.2081, base: 0.09, sens: 1.10, note: '华中' },
+    CSX: { city: '长沙黄花', lat: 28.1892, lon: 113.2196, base: 0.10, sens: 1.15, note: '中南' },
+    CGO: { city: '郑州新郑', lat: 34.5197, lon: 113.8409, base: 0.10, sens: 1.15, note: '中原' },
+    YIH: { city: '宜昌三峡', lat: 30.5566, lon: 111.4794, base: 0.11, sens: 1.20, note: '华中' },
+    XFN: { city: '襄阳刘集', lat: 32.1506, lon: 112.2910, base: 0.11, sens: 1.20, note: '鄂北' },
+    HIA: { city: '淮安涟水', lat: 33.7775, lon: 119.1511, base: 0.10, sens: 1.15, note: '苏北' },
+    LYG: { city: '连云港花果山', lat: 34.5719, lon: 119.1578, base: 0.10, sens: 1.15, note: '苏北' },
+    XUZ: { city: '徐州观音', lat: 34.0594, lon: 117.5556, base: 0.10, sens: 1.15, note: '苏北' },
+
+    // ===== 西南 =====
+    CTU: { city: '成都双流', lat: 30.5785, lon: 103.9471, base: 0.10, sens: 1.15, note: '西南枢纽' },
+    TFU: { city: '成都天府', lat: 30.3125, lon: 104.4419, base: 0.09, sens: 1.10, note: '新枢纽' },
+    CKG: { city: '重庆江北', lat: 29.7192, lon: 106.6417, base: 0.12, sens: 1.25, note: '雾都' },
+    KMG: { city: '昆明长水', lat: 25.1019, lon: 102.9292, base: 0.11, sens: 1.20, note: '高原' },
+    KWE: { city: '贵阳龙洞堡', lat: 26.5385, lon: 106.8007, base: 0.12, sens: 1.25, note: '高原' },
+    XIC: { city: '西昌青山', lat: 27.9891, lon: 102.1842, base: 0.13, sens: 1.30, note: '高原' },
+    LJG: { city: '丽江三义', lat: 26.6800, lon: 100.2462, base: 0.12, sens: 1.25, note: '高原旅游' },
+    LXA: { city: '拉萨贡嘎', lat: 29.2978, lon: 90.9119, base: 0.15, sens: 1.40, note: '高高原' },
+    MIG: { city: '绵阳南郊', lat: 31.4281, lon: 104.7417, base: 0.11, sens: 1.20, note: '四川' },
+    NAO: { city: '南充高坪', lat: 30.7953, lon: 106.1622, base: 0.11, sens: 1.20, note: '四川' },
+
+    // ===== 西北 =====
+    XIY: { city: '西安咸阳', lat: 34.4471, lon: 108.7516, base: 0.09, sens: 1.10, note: '西北枢纽' },
+    URC: { city: '乌鲁木齐地窝堡', lat: 43.9071, lon: 87.4742, base: 0.12, sens: 1.30, note: '西北门户' },
+    LHW: { city: '兰州中川', lat: 36.5152, lon: 103.6205, base: 0.11, sens: 1.20, note: '西北' },
+    INC: { city: '银川河东', lat: 38.3216, lon: 106.3931, base: 0.11, sens: 1.20, note: '西北' },
+    XNN: { city: '西宁曹家堡', lat: 36.5275, lon: 102.0430, base: 0.12, sens: 1.25, note: '高原' },
+    HMI: { city: '哈密伊州', lat: 42.8414, lon: 93.6692, base: 0.13, sens: 1.30, note: '东疆' },
+    KRL: { city: '库尔勒', lat: 41.6978, lon: 86.1289, base: 0.13, sens: 1.30, note: '南疆' },
+    KHG: { city: '喀什', lat: 39.5424, lon: 76.0200, base: 0.14, sens: 1.35, note: '南疆' },
+    YIN: { city: '伊宁', lat: 43.9558, lon: 81.3303, base: 0.13, sens: 1.30, note: '北疆' },
+    AKU: { city: '阿克苏红旗坡', lat: 41.2625, lon: 80.2917, base: 0.13, sens: 1.30, note: '南疆' },
+
+    // ===== 东北 =====
+    HRB: { city: '哈尔滨太平', lat: 45.6234, lon: 126.2500, base: 0.11, sens: 1.25, note: '冬季冰雪' },
+    SHE: { city: '沈阳桃仙', lat: 41.6398, lon: 123.4833, base: 0.10, sens: 1.20, note: '东北' },
+    DLC: { city: '大连周水子', lat: 38.9657, lon: 121.5386, base: 0.10, sens: 1.20, note: '沿海' },
+    CGQ: { city: '长春龙嘉', lat: 43.9962, lon: 125.6853, base: 0.11, sens: 1.25, note: '东北' },
+    YNJ: { city: '延吉朝阳川', lat: 42.8828, lon: 129.4514, base: 0.12, sens: 1.25, note: '东北' },
+    MDG: { city: '牡丹江海浪', lat: 44.5240, lon: 129.5690, base: 0.12, sens: 1.25, note: '东北' },
+    JMU: { city: '佳木斯东郊', lat: 46.8433, lon: 130.4653, base: 0.12, sens: 1.25, note: '东北' },
+    DDG: { city: '丹东浪头', lat: 40.0256, lon: 124.2867, base: 0.11, sens: 1.20, note: '东北' }
+  };
+
+  /* ---------- 2. 中国航司 ---------- */
+  const AIRLINES = {
+    shandong:   { name: '山东航空',   code: 'SC', ontine: 0.9562, base: 0.0438 },
+    juneyao:    { name: '吉祥航空',   code: 'HO', ontine: 0.9505, base: 0.0495 },
+    ceair:      { name: '东方航空',   code: 'MU', ontine: 0.9496, base: 0.0504 },
+    spring:     { name: '春秋航空',   code: '9C', ontine: 0.9493, base: 0.0507 },
+    xiamen:     { name: '厦门航空',   code: 'MF', ontine: 0.9487, base: 0.0513 },
+    tianjin:    { name: '天津航空',   code: 'GS', ontine: 0.9463, base: 0.0537 },
+    airchina:   { name: '中国国航',   code: 'CA', ontine: 0.9459, base: 0.0541 },
+    hainan:     { name: '海南航空',   code: 'HU', ontine: 0.9438, base: 0.0562 },
+    chengdu:    { name: '成都航空',   code: 'EU', ontine: 0.9429, base: 0.0571 },
+    csair:      { name: '南方航空',   code: 'CZ', ontine: 0.9363, base: 0.0637 },
+    sichuan:    { name: '四川航空',   code: '3U', ontine: 0.9299, base: 0.0701 },
+    shenzhen:   { name: '深圳航空',   code: 'ZH', ontine: 0.8750, base: 0.1250 }
+  };
+
+  /* ---------- 3. 时段 ---------- */
+  const TIME_RANGES = {
+    early:     [6, 7, 8],
+    morning:   [9, 10, 11],
+    afternoon: [12, 13, 14, 15, 16],
+    evening:   [17, 18, 19, 20],
+    night:     [21, 22, 23, 0, 1, 2, 3, 4, 5]
+  };
+
+  const TIME_BASE_DELAY = { early: 0.06, morning: 0.10, afternoon: 0.14, evening: 0.20, night: 0.16 };
+  const TIME_ONTIME_HINT = { early: '正常率 ≈ 94%', morning: '正常率 ≈ 91%', afternoon: '正常率 ≈ 88%', evening: '正常率 ≈ 85%', night: '正常率 ≈ 87%' };
+  const TIME_BUSY = { early: 0.15, morning: 0.45, afternoon: 0.70, evening: 0.65, night: 0.20 };
+
+  const CACHE_KEY = 'flight_delay_cn_v4';
+  const CACHE_TTL = 3 * 60 * 60 * 1000;
+  const BATCH_SIZE = 20;
+
+  /* ---------- 4. 工具 ---------- */
+  const $ = id => document.getElementById(id);
+  const pad2 = n => String(n).padStart(2, '0');
+  function fmtDate(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+  function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+  function timeAgo(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60) return '刚刚';
+    if (s < 3600) return Math.floor(s / 60) + ' 分钟前';
+    return Math.floor(s / 3600) + ' 小时前';
+  }
+
+  /* ---------- 5. WMO 天气代码 ---------- */
+  function wmoInfo(code) {
+    if (code === 0) return { cat: 'clear',   label: '晴朗',     icon: '☀️' };
+    if (code === 1) return { cat: 'clear',   label: '大部晴朗', icon: '🌤️' };
+    if (code === 2) return { cat: 'cloudy',  label: '局部多云', icon: '⛅' };
+    if (code === 3) return { cat: 'cloudy',  label: '阴天',     icon: '☁️' };
+    if (code === 45 || code === 48) return { cat: 'fog', label: '雾', icon: '🌫️' };
+    if (code >= 51 && code <= 57) return { cat: 'rain', label: '毛毛雨', icon: '🌦️' };
+    if (code >= 61 && code <= 67) return { cat: 'rain', label: '降雨',   icon: '🌧️' };
+    if (code >= 71 && code <= 77) return { cat: 'snow', label: '降雪',   icon: '❄️' };
+    if (code >= 80 && code <= 82) return { cat: 'rain', label: '阵雨',   icon: '🌧️' };
+    if (code === 85 || code === 86) return { cat: 'snow', label: '阵雪', icon: '🌨️' };
+    if (code >= 95) return { cat: 'storm', label: '雷暴', icon: '⛈️' };
+    return { cat: 'cloudy', label: '多云', icon: '🌥️' };
+  }
+
+  /* ---------- 6. 天气抓取（分批） ---------- */
+  const WEATHER_VARS = [
+    'weather_code', 'temperature_2m', 'dewpoint_2m', 'precipitation',
+    'snowfall', 'visibility', 'cloud_cover_low',
+    'wind_speed_10m', 'wind_gusts_10m', 'wind_direction_10m',
+    'cape', 'pressure_msl'
+  ];
+
+  function getTargetHours(dateStr, timeKey) {
+    const hours = TIME_RANGES[timeKey];
+    const out = [];
+    hours.forEach(h => {
+      if (timeKey === 'night' && h < 6) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const dt = new Date(Date.UTC(y, m - 1, d));
+        dt.setUTCDate(dt.getUTCDate() + 1);
+        const nd = `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
+        out.push(`${nd}T${pad2(h)}`);
+      } else {
+        out.push(`${dateStr}T${pad2(h)}`);
+      }
+    });
+    return out;
+  }
+
+  function aggregateHours(raw, dateStr, timeKey) {
+    if (!raw || !raw.hourly || !raw.hourly.time) return null;
+    const targets = new Set(getTargetHours(dateStr, timeKey));
+    const H = raw.hourly;
+
+    let count = 0;
+    let precipMax = 0, snowMax = 0, windMax = 0, gustMax = 0, capeMax = 0;
+    let visMin = Infinity, tempSum = 0, lowCloudAvg = 0, codeWorst = 0, sevWorst = -1;
+
+    for (let i = 0; i < H.time.length; i++) {
+      if (!targets.has(H.time[i].slice(0, 13))) continue;
+      count++;
+      const precip = (H.precipitation && H.precipitation[i]) || 0;
+      const snow = (H.snowfall && H.snowfall[i]) || 0;
+      const wind = (H.wind_speed_10m && H.wind_speed_10m[i]) || 0;
+      const gust = (H.wind_gusts_10m && H.wind_gusts_10m[i]) || 0;
+      const cape = (H.cape && H.cape[i]) || 0;
+      const vis = H.visibility && H.visibility[i];
+      const temp = (H.temperature_2m && H.temperature_2m[i]) || 0;
+      const lowCloud = (H.cloud_cover_low && H.cloud_cover_low[i]) || 0;
+      const code = (H.weather_code && H.weather_code[i]) || 0;
+
+      precipMax = Math.max(precipMax, precip);
+      snowMax = Math.max(snowMax, snow);
+      windMax = Math.max(windMax, wind);
+      gustMax = Math.max(gustMax, gust);
+      capeMax = Math.max(capeMax, cape);
+      if (vis != null && vis < visMin) visMin = vis;
+      tempSum += temp;
+      lowCloudAvg += lowCloud;
+
+      const sev = wmoSeverityEstimate(code);
+      if (sev > sevWorst) { sevWorst = sev; codeWorst = code; }
+    }
+    if (count === 0) return null;
+
+    const info = wmoInfo(codeWorst);
+    return {
+      code: codeWorst, cat: info.cat, label: info.label, icon: info.icon,
+      vis: visMin === Infinity ? 99999 : visMin,
+      precip: Math.round(precipMax * 10) / 10,
+      snow: Math.round(snowMax * 10) / 10,
+      wind: Math.round(windMax), gust: Math.round(gustMax), cape: Math.round(capeMax),
+      temp: Math.round(tempSum / count),
+      lowCloud: Math.round(lowCloudAvg / count), hours: count
+    };
+  }
+
+  function wmoSeverityEstimate(code) {
+    if (code === 0) return 0;
+    if (code === 1) return 0.02;
+    if (code === 2) return 0.04;
+    if (code === 3) return 0.09;
+    if (code === 45 || code === 48) return 0.50;
+    if (code >= 51 && code <= 57) return 0.22;
+    if (code >= 61 && code <= 67) return 0.40;
+    if (code >= 71 && code <= 77) return 0.62;
+    if (code >= 80 && code <= 82) return 0.44;
+    if (code === 85 || code === 86) return 0.66;
+    if (code >= 95) return 0.82;
+    return 0.10;
+  }
+
+  // 分批请求天气
+  async function fetchAllAirports() {
+    const entries = Object.entries(AIRPORTS);
+    const batches = [];
+    for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+      batches.push(entries.slice(i, i + BATCH_SIZE));
+    }
+
+    const allResults = {};
+    let okCount = 0;
+
+    for (const batch of batches) {
+      const lats = batch.map(([, ap]) => ap.lat).join(',');
+      const lons = batch.map(([, ap]) => ap.lon).join(',');
+      const url = 'https://api.open-meteo.com/v1/forecast'
+        + '?latitude=' + lats + '&longitude=' + lons
+        + '&hourly=' + WEATHER_VARS.join(',')
+        + '&timezone=auto&forecast_days=3';
+
+      try {
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const arr = Array.isArray(data) ? data : [data];
+        batch.forEach(([code], idx) => {
+          if (arr[idx]) { allResults[code] = arr[idx]; okCount++; }
+        });
+      } catch (err) {
+        console.warn('[weather] 批次失败:', err.message);
+      }
+    }
+
+    return { data: allResults, okCount, total: entries.length };
+  }
+
+  function buildWeatherIndex(rawByAirport, dates) {
+    const index = {};
+    dates.forEach(d => { index[d] = {}; });
+    Object.keys(AIRPORTS).forEach(code => {
+      const raw = rawByAirport[code];
+      dates.forEach(d => {
+        index[d][code] = {};
+        Object.keys(TIME_RANGES).forEach(tk => {
+          index[d][code][tk] = raw ? aggregateHours(raw, d, tk) : null;
+        });
+      });
+    });
+    return index;
+  }
+
+  function buildFallbackIndex(dates) {
+    const index = {};
+    dates.forEach(d => {
+      index[d] = {};
+      Object.keys(AIRPORTS).forEach(code => {
+        index[d][code] = {};
+        Object.keys(TIME_RANGES).forEach(tk => {
+          let h = 0;
+          const seed = code + d + tk;
+          for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+          const r = (h % 100) / 100;
+          const info = r < 0.55
+            ? { cat: 'clear', label: '晴朗', icon: '☀️', code: 0 }
+            : r < 0.78
+              ? { cat: 'cloudy', label: '多云', icon: '⛅', code: 2 }
+              : r < 0.92
+                ? { cat: 'rain', label: '小雨', icon: '🌧️', code: 61 }
+                : { cat: 'storm', label: '雷暴', icon: '⛈️', code: 95 };
+          index[d][code][tk] = {
+            code: info.code, cat: info.cat, label: info.label, icon: info.icon,
+            vis: info.cat === 'storm' ? 2000 : info.cat === 'rain' ? 6000 : 99999,
+            precip: info.cat === 'storm' ? 8 : info.cat === 'rain' ? 1.5 : 0,
+            snow: 0, wind: 12, gust: 22, cape: info.cat === 'storm' ? 1500 : 200,
+            temp: 20, lowCloud: 30, hours: 0, estimated: true
+          };
+        });
+      });
+    });
+    return index;
+  }
+
+  /* ---------- 7. 缓存 ---------- */
+  let weatherCache = null;
+  let syncing = false;
+
+  function loadCache() {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      if (!obj || !obj.index || !obj.cachedOn) return null;
+      return obj;
+    } catch { return null; }
+  }
+  function saveCache(obj) {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(obj)); }
+    catch (e) { console.warn('[cache]', e); }
+  }
+  function setSyncStatus(cls, html) {
+    const el = $('syncStatus');
+    el.className = cls; el.innerHTML = html;
+  }
+
+  /* ---------- 8. 同步 ---------- */
+  async function syncWeather(force) {
+    if (syncing) return;
+    syncing = true; $('refreshBtn').disabled = true;
+
+    const today = new Date();
+    const dates = [fmtDate(today), fmtDate(addDays(today, 1))];
+    const cached = loadCache();
+    const cacheFresh = cached && cached.cachedOn === dates[0]
+      && (Date.now() - cached.updatedAt) < CACHE_TTL;
+
+    if (!force && cacheFresh) {
+      weatherCache = cached;
+      setSyncStatus('ok', '✅ 已加载今日天气 · ' + timeAgo(cached.updatedAt) + '更新');
+      finishSync(); return;
+    }
+
+    setSyncStatus('loading', '<span class="spin">🔄</span> 正在同步 ' + Object.keys(AIRPORTS).length + ' 个机场天气…');
+
+    try {
+      const { data, okCount, total } = await fetchAllAirports();
+      if (okCount === 0) throw new Error('所有机场天气获取失败');
+      const index = buildWeatherIndex(data, dates);
+      weatherCache = { cachedOn: dates[0], updatedAt: Date.now(), index, live: true, okCount, total };
+      saveCache(weatherCache);
+      const now = new Date();
+      setSyncStatus('ok', '✅ 实时天气已更新 · ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes())
+        + ' · ' + okCount + '/' + total + ' 机场');
+    } catch (err) {
+      console.warn('[sync] 联网失败:', err);
+      if (cached) {
+        weatherCache = cached;
+        setSyncStatus('warn', '⚠️ 网络异常 · 使用 ' + timeAgo(cached.updatedAt) + ' 的缓存');
+      } else {
+        weatherCache = { cachedOn: dates[0], updatedAt: Date.now(), index: buildFallbackIndex(dates), live: false };
+        setSyncStatus('warn', '⚠️ 离线估算模式 · 无法连接气象服务');
+      }
+    }
+    finishSync();
+  }
+
+  function finishSync() {
+    syncing = false; $('refreshBtn').disabled = false;
+    $('predictBtn').disabled = false;
+    renderWeatherStrip(); runPrediction();
+  }
+
+  /* ---------- 9. 选择 ---------- */
+  function getSelection() {
+    const dateSel = $('dateSelect').value;
+    const d = new Date();
+    if (dateSel === 'tomorrow') d.setDate(d.getDate() + 1);
+    return {
+      airline: $('airlineSelect').value,
+      origin: $('originSelect').value,
+      dest: $('destSelect').value,
+      date: fmtDate(d), time: $('timeSelect').value
+    };
+  }
+  function getWeatherFor(code, date, time) {
+    if (!weatherCache || !weatherCache.index) return null;
+    const day = weatherCache.index[date];
+    if (!day || !day[code]) return null;
+    return day[code][time] || null;
+  }
+
+  /* ---------- 10. 天气条 ---------- */
+  function renderWeatherStrip() {
+    const sel = getSelection();
+    const o = getWeatherFor(sel.origin, sel.date, sel.time);
+    const d = getWeatherFor(sel.dest, sel.date, sel.time);
+    const dateLabel = sel.date === fmtDate(new Date()) ? '今天' : '明天';
+    const timeLabel = { early:'清晨', morning:'上午', afternoon:'下午', evening:'傍晚', night:'夜间' }[sel.time];
+    $('wxOrigin').innerHTML = o ? wxBoxHTML(sel.origin, o, dateLabel, timeLabel) : emptyWxBox('出发地', sel.origin);
+    $('wxDest').innerHTML   = d ? wxBoxHTML(sel.dest, d, dateLabel, timeLabel)   : emptyWxBox('到达地', sel.dest);
+  }
+
+  function wxBoxHTML(code, wx, dateLabel, timeLabel) {
+    const ap = AIRPORTS[code];
+    const extra = [];
+    if (wx.temp != null) extra.push(wx.temp + '°C');
+    if (wx.vis < 99999) extra.push('能见 ' + (wx.vis >= 1000 ? (wx.vis / 1000).toFixed(1) + 'km' : wx.vis + 'm'));
+    if (wx.gust) extra.push('阵风 ' + wx.gust + 'km/h');
+    if (wx.precip) extra.push('降水 ' + wx.precip + 'mm');
+    if (wx.snow) extra.push('雪 ' + wx.snow + 'cm');
+    return '<span class="wx-icon">' + wx.icon + '</span>'
+      + '<span class="wx-meta">'
+      +   '<span class="ap">' + code + ' · ' + (ap ? ap.city : '') + '</span>'
+      +   '<span class="desc">' + wx.label + (wx.estimated ? ' (估算)' : '') + '</span>'
+      +   '<span class="extra">' + dateLabel + timeLabel + ' · ' + extra.join(' · ') + '</span>'
+      + '</span>';
+  }
+
+  function emptyWxBox(label, code) {
+    const ap = AIRPORTS[code];
+    return '<span class="wx-icon">🛰️</span>'
+      + '<span class="wx-meta">'
+      +   '<span class="ap">' + code + ' · ' + (ap ? ap.city : '') + '</span>'
+      +   '<span class="desc">' + label + '数据缺失</span>'
+      +   '<span class="extra">等待同步…</span>'
+      + '</span>';
+  }
+
+  /* ---------- 11. 天气影响 ---------- */
+  function weatherImpact(wx) {
+    if (!wx) return { score: 0.12, reasons: [{ text: '天气数据缺失', weight: 0.12 }] };
+    const reasons = [];
+    let score = 0;
+    const add = (cond, w, text) => { if (cond) { score += w; reasons.push({ text, weight: w }); } };
+
+    add(wx.vis < 500,         0.75, `极低能见度 ${wx.vis}m（CAT III）`);
+    add(wx.vis >= 500 && wx.vis < 1600,  0.45, `低能见度 ${wx.vis}m（CAT I/II）`);
+    add(wx.vis >= 1600 && wx.vis < 4800, 0.20, `能见度 ${wx.vis}m（受限）`);
+
+    add(wx.precip > 7.5,  0.40, `强降水 ${wx.precip}mm/h`);
+    add(wx.precip > 2.5 && wx.precip <= 7.5, 0.22, `中等降水 ${wx.precip}mm/h`);
+    add(wx.precip > 0.2 && wx.precip <= 2.5, 0.08, `小量降水`);
+
+    add(wx.snow > 5,   0.85, `强降雪 ${wx.snow}cm（除冰除雪）`);
+    add(wx.snow > 1 && wx.snow <= 5,  0.50, `降雪 ${wx.snow}cm（需除冰）`);
+    add(wx.snow > 0.1 && wx.snow <= 1, 0.20, `飘雪`);
+
+    add(wx.cape > 2500,  0.70, `强对流 CAPE ${wx.cape} J/kg`);
+    add(wx.cape > 1200 && wx.cape <= 2500, 0.35, `对流活跃 CAPE ${wx.cape} J/kg`);
+
+    add(wx.gust > 45,  0.70, `强阵风 ${wx.gust}km/h`);
+    add(wx.gust > 35 && wx.gust <= 45, 0.35, `阵风 ${wx.gust}km/h`);
+    add(wx.gust > 25 && wx.gust <= 35, 0.12, `中等阵风`);
+
+    const freezing = [48, 56, 57, 66, 67].includes(wx.code);
+    add(freezing, 0.55, '冻雾/冻雨（需除冰）');
+
+    add(wx.temp < -8, 0.25, `极寒 ${wx.temp}°C`);
+
+    score = Math.min(1.2, score);
+    return { score, reasons };
+  }
+
+  /* ---------- 12. 尾号传导 ---------- */
+  function upstreamContamination(originCode, date, timeKey) {
+    if (!weatherCache || !weatherCache.index[date]) return 0;
+    const dayWx = weatherCache.index[date][originCode];
+    if (!dayWx) return 0;
+    const order = ['early', 'morning', 'afternoon', 'evening', 'night'];
+    const idx = order.indexOf(timeKey);
+    if (idx <= 0) return 0;
+    let cum = 0;
+    for (let i = 0; i < idx; i++) {
+      const wx = dayWx[order[i]];
+      if (!wx) continue;
+      const imp = weatherImpact(wx).score;
+      const decay = Math.pow(0.78, idx - i);
+      cum += imp * decay;
+    }
+    return Math.min(0.50, cum * 0.18);
+  }
+/* ---------- 13. 季节/星期 ---------- */
+  function seasonalFactor(dateStr) {
+    const month = new Date(dateStr + 'T12:00:00').getMonth();
+    if (month >= 5 && month <= 7) return 0.14;
+    if (month === 11 || month <= 1) return 0.10;
+    return -0.02;
+  }
+  function dowFactor(dateStr) {
+    const dow = new Date(dateStr + 'T12:00:00').getDay();
+    if (dow === 5) return 0.04;
+    if (dow === 0 || dow === 1) return 0.03;
+    return 0;
+  }
+
+  /* ---------- 14. 拥堵 ---------- */
+  function deriveCongestion(originWeatherScore, timeKey, airportCode) {
+    const busy = TIME_BUSY[timeKey] || 0.4;
+    const sens = (AIRPORTS[airportCode] && AIRPORTS[airportCode].sens) || 1.0;
+    const raw = (busy * 0.55 + Math.min(1, originWeatherScore) * 0.55) * sens;
+    return Math.min(1, Math.max(0, raw));
+  }
+
+  /* ---------- 15. 核心预测 ---------- */
+  function computePrediction(sel) {
+    const originWx = getWeatherFor(sel.origin, sel.date, sel.time);
+    const destWx   = getWeatherFor(sel.dest,   sel.date, sel.time);
+    const originImpact = weatherImpact(originWx);
+    const destImpact   = weatherImpact(destWx);
+    const upstream   = upstreamContamination(sel.origin, sel.date, sel.time);
+    const hourDelay  = TIME_BASE_DELAY[sel.time] || 0.12;
+    const congestion = deriveCongestion(originImpact.score, sel.time, sel.origin);
+    const airlineBase = AIRLINES[sel.airline].base;
+    const seasonal = seasonalFactor(sel.date) + dowFactor(sel.date);
+    const routeInteraction = Math.min(0.18, originImpact.score * destImpact.score * 0.35);
+
+    let raw = 0.18;
+    raw += originImpact.score * 0.50;
+    raw += destImpact.score * 0.25;
+    raw += routeInteraction;
+    raw += hourDelay * 0.60;
+    raw += upstream * 0.35;
+    raw += congestion * 0.28;
+    raw += (airlineBase - 0.055) * 0.45;
+    raw += seasonal * 0.45;
+
+    if (originImpact.score > 0.85 && congestion > 0.75) raw += 0.05;
+
+    const sig = 1 / (1 + Math.exp(-2.4 * (raw - 0.72)));
+    const prob = Math.round(Math.max(0.03, Math.min(0.92, 0.02 + 0.90 * sig)) * 100);
+
+    return {
+      prob, originImpact, destImpact, upstream, congestion,
+      hourDelay, airlineBase, seasonal, routeInteraction, originWx, destWx
+    };
+  }
+
+  /* ---------- 16. 渲染结果 ---------- */
+  function runPrediction() {
+    const sel = getSelection();
+    const r = computePrediction(sel);
+    const prob = r.prob;
+
+    $('probValue').innerHTML = prob + '<small>%</small>';
+    const fill = $('progressFill');
+    fill.style.width = prob + '%';
+
+    let riskText, riskColor, recHtml;
+    if (prob < 8) {
+      riskText = '极低风险'; riskColor = '#1f7a4a';
+      recHtml = '<i>🟢</i> <span>准点率很高，可放心按原计划出行。建议提前 1 小时到达机场。</span>';
+    } else if (prob < 18) {
+      riskText = '低风险'; riskColor = '#2e7d5e';
+      recHtml = '<i>🟢</i> <span>延误概率较低，天气与运行条件良好。仍建议起飞前 2 小时确认航班动态。</span>';
+    } else if (prob < 35) {
+      riskText = '中等风险'; riskColor = '#b57c1c';
+      recHtml = '<i>🟡</i> <span>存在一定延误可能。建议预留 30 分钟缓冲，出发前 3 小时查看航司通知。</span>';
+    } else if (prob < 55) {
+      riskText = '较高风险'; riskColor = '#d4751a';
+      recHtml = '<i>🟠</i> <span>延误概率较高。建议提前联系航司确认状态，考虑购买旅行延误险。</span>';
+    } else if (prob < 75) {
+      riskText = '高风险'; riskColor = '#b33b2c';
+      recHtml = '<i>🔴</i> <span>很可能延误。建议改签早班机或考虑其他交通方式，实时关注航司公告。</span>';
+    } else {
+      riskText = '极高风险'; riskColor = '#8b1e10';
+      recHtml = '<i>🔴</i> <span>大概率延误或取消。强烈建议调整行程，准备住宿/改签方案。</span>';
+    }
+
+    if (r.originWx && r.originWx.estimated) {
+      recHtml += '<br><span style="font-size:.76rem;opacity:.75;">⚠️ 当前为离线估算模式，建议联网后重新预测。</span>';
+    }
+
+    const badge = $('riskBadge');
+    badge.textContent = riskText;
+    badge.style.backgroundColor = riskColor + '22';
+    badge.style.color = riskColor;
+
+    if (prob < 18) fill.style.background = 'linear-gradient(90deg, #6ec48b, #2f9e6c)';
+    else if (prob < 45) fill.style.background = 'linear-gradient(90deg, #f0c45a, #d68d2c)';
+    else fill.style.background = 'linear-gradient(90deg, #e07b5a, #b33b2c)';
+
+    $('probValue').style.color = prob >= 45 ? '#b33b2c' : (prob >= 18 ? '#b57c1c' : '#0b2b4b');
+    $('recommendation').innerHTML = recHtml;
+    renderFactors(r, sel);
+
+    const details = [];
+    details.push('🛫 ' + sel.origin + ' 天气：' + (r.originWx ? r.originWx.label : '未知'));
+    details.push('🛬 ' + sel.dest + ' 天气：' + (r.destWx ? r.destWx.label : '未知'));
+    details.push('📈 时段基线：' + Math.round(r.hourDelay * 100) + '%');
+    details.push('🔗 尾号传导：' + Math.round(r.upstream * 100) + '%');
+    details.push('🚦 拥堵指数：' + Math.round(r.congestion * 100) + '%');
+    details.push('✈️ 航司正常率：' + Math.round((1 - r.airlineBase) * 100) + '%');
+    if (r.originWx && r.originWx.vis < 99999) {
+      details.push('👁️ 能见度：' + (r.originWx.vis >= 1000 ? (r.originWx.vis / 1000).toFixed(1) + 'km' : r.originWx.vis + 'm'));
+    }
+    if (r.originWx && r.originWx.gust) details.push('💨 阵风：' + r.originWx.gust + ' km/h');
+    if (weatherCache && !weatherCache.live) details.push('📴 数据源：离线估算');
+    $('detailRow').innerHTML = details.map(x => '<span>' + x + '</span>').join('');
+
+    const card = $('resultCard');
+    card.classList.add('updating');
+    setTimeout(() => card.classList.remove('updating'), 400);
+  }
+
+  /* ---------- 17. 主因分析 ---------- */
+  function renderFactors(r, sel) {
+    const items = [];
+    if (r.originImpact.reasons.length) {
+      r.originImpact.reasons.slice(0, 2).forEach(x => {
+        items.push({ label: '出发天气 · ' + x.text, weight: x.weight * 0.50 });
+      });
+    }
+    if (r.destImpact.reasons.length) {
+      r.destImpact.reasons.slice(0, 1).forEach(x => {
+        items.push({ label: '到达天气 · ' + x.text, weight: x.weight * 0.25 });
+      });
+    }
+    if (r.upstream > 0.05) {
+      items.push({ label: '上游航班延误传导', weight: r.upstream * 0.35 });
+    }
+    if (r.hourDelay > 0.14) {
+      items.push({ label: '傍晚/午后延误累积', weight: r.hourDelay * 0.40 });
+    } else if (r.hourDelay < 0.10) {
+      items.push({ label: '早班时段（准点率最高）', weight: -(0.12 - r.hourDelay) * 0.5 });
+    }
+    if (r.congestion > 0.5) {
+      items.push({ label: '出发机场空域拥堵', weight: r.congestion * 0.28 });
+    }
+    if (r.airlineBase > 0.06) {
+      items.push({ label: '航司历史延误偏高（' + AIRLINES[sel.airline].name + '）', weight: (r.airlineBase - 0.055) * 0.45 });
+    } else if (r.airlineBase < 0.05) {
+      items.push({ label: '航司准点表现优秀（' + AIRLINES[sel.airline].name + '）', weight: -(0.055 - r.airlineBase) * 0.4 });
+    }
+    if (r.seasonal > 0.05) {
+      items.push({ label: '季节因素（雷暴/冰雪高发期）', weight: r.seasonal * 0.45 });
+    }
+
+    items.sort((a, b) => Math.abs(b.weight) - Math.abs(a.weight));
+    const top = items.slice(0, 4);
+
+    if (!top.length) {
+      $('factorsList').innerHTML = '<div class="factor-empty">各项条件良好，无明显风险因子</div>';
+      return;
+    }
+
+    const maxW = Math.max(...top.map(x => Math.abs(x.weight)));
+    $('factorsList').innerHTML = top.map(x => {
+      const pct = Math.round(Math.abs(x.weight) / maxW * 100);
+      const positive = x.weight > 0;
+      const color = positive ? '#d4751a' : '#2f9e6c';
+      const sign = positive ? '+' : '−';
+      return `
+        <div class="factor-item">
+          <span style="min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${x.label}</span>
+          <div class="factor-bar-bg">
+            <div class="factor-bar-fill" style="width:${pct}%;background:${color};"></div>
+          </div>
+          <span class="factor-pct" style="color:${color};">${sign}${pct}%</span>
+        </div>`;
+    }).join('');
+  }
+
+  /* ---------- 18. 初始化 ---------- */
+  function initSelects() {
+    const originSel = $('originSelect');
+    const destSel = $('destSelect');
+    const codes = Object.keys(AIRPORTS);
+    const opts = codes.map(c =>
+      `<option value="${c}">${AIRPORTS[c].city} (${c}) · ${AIRPORTS[c].note}</option>`
+    ).join('');
+    originSel.innerHTML = opts;
+    destSel.innerHTML = opts;
+    originSel.value = 'PEK';
+    destSel.value = 'CAN';
+  }
+
+  function updateHints() {
+    const tk = $('timeSelect').value;
+    $('timeHint').textContent = TIME_ONTIME_HINT[tk] || '';
+    const ak = $('airlineSelect').value;
+    $('airlineHint').textContent = '正常率 ' + (AIRLINES[ak].ontine * 100).toFixed(1) + '%';
+  }
+
+  function bindEvents() {
+    $('predictBtn').addEventListener('click', runPrediction);
+    $('refreshBtn').addEventListener('click', () => syncWeather(true));
+    ['airlineSelect', 'originSelect', 'destSelect', 'dateSelect', 'timeSelect'].forEach(id => {
+      $(id).addEventListener('change', () => {
+        updateHints(); renderWeatherStrip(); runPrediction();
+      });
+    });
+  }
+
+  /* ---------- 19. 自动更新 ---------- */
+  function setupAutoUpdate() {
+    setInterval(() => {
+      const todayStr = fmtDate(new Date());
+      const cached = loadCache();
+      const need = !cached || cached.cachedOn !== todayStr
+        || (Date.now() - cached.updatedAt) > CACHE_TTL;
+      if (need && !syncing) {
+        console.log('[auto] 触发每日/过期自动更新');
+        syncWeather(true);
+      }
+    }, 20 * 60 * 1000);
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible' || syncing) return;
+      const cached = loadCache();
+      const todayStr = fmtDate(new Date());
+      if (!cached || cached.cachedOn !== todayStr
+        || (Date.now() - cached.updatedAt) > CACHE_TTL) {
+        syncWeather(true);
+      }
+    });
+
+    scheduleMidnightRefresh();
+  }
+
+  function scheduleMidnightRefresh() {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(24, 1, 0, 0);
+    const delay = next - now;
+    setTimeout(() => {
+      console.log('[auto] 跨天刷新天气数据');
+      syncWeather(true);
+      scheduleMidnightRefresh();
+    }, delay);
+  }
+
+  /* ---------- 20. 启动 ---------- */
+  function boot() {
+    initSelects(); updateHints(); bindEvents();
+    setupAutoUpdate(); syncWeather(false);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+
+})();
+</script>
+</body>
+</html>
